@@ -1,0 +1,20 @@
+{
+  "name": "11soat-fast-food-fase-3-lambda",
+  "version": "1.0.0",
+  "main": "src/handlers/cpfHandler.js",
+  "scripts": {
+    "deploy": "aws lambda update-function-code --function-name cpf-cognito-handler --zip-file fileb://deploy.zip",
+    "package": "zip -r deploy.zip . -x '*.git' 'node_modules/*'",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "^3.873.0",
+    "dotenv": "^17.2.1"
+  },
+  "devDependencies": {
+    "@aws-sdk/types": "^3.862.0"
+  }
+}
