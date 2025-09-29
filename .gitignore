@@ -1,3 +1,15 @@
+# Arquivos sensíveis
 .env
+*.env
+secrets/
+aws-credentials.txt
 node_modules
 note.txt
+
+
+
+# Arquivos temporários
+*.zip
+.terraform/
+*.tfstate
+*.tfstate.backup
