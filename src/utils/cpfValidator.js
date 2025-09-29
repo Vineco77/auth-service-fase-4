@@ -48,7 +48,7 @@ class CPFValidator {
             if (firstVerifier !== parseInt(cleanedCPF[9]) || secondVerifier !== parseInt(cleanedCPF[10])) {
                 return {
                     isValid: false,
-                    message: 'Dígitos verificadores Inválidos',
+                    message: 'Dígitos verificadores Inválidos.',
                     cleanedCPF: cleanedCPF
                 }
             }
