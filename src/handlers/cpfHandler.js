@@ -1,6 +1,18 @@
 const { CPFValidator } = require('../utils/cpfValidator');
 const { CognitoService } = require('../services/cognitoService');
 
+// Debug: Verificar se as dependências estão carregando
+console.log('CPFValidator:', typeof CPFValidator);
+console.log('CognitoService:', typeof CognitoService);
+
+// Carregar .env manualmente se necessário
+require('dotenv').config();
+
+console.log('Environment Variables:', {
+    COGNITO_USER_POOL_ID: process.env.COGNITO_USER_POOL_ID,
+    COGNITO_CLIENT_ID: process.env.COGNITO_CLIENT_ID
+});
+
 const cognitoService = new CognitoService();
 
 exports.handler = async (event) => {
@@ -9,8 +21,19 @@ exports.handler = async (event) => {
 
         let cpf;
         if (event.body) {
-            const body = JSON.parse(event.body);
-            cpf = body.cpf;
+            try {
+                const body = typeof event.body === 'string' ? JSON.parse(event.body) : event.body;
+                cpf = body.cpf;
+            } catch (parseError) {
+                console.error('Error parsing body:', parseError);
+                return {
+                    statusCode: 400,
+                    body: JSON.stringify({
+                        error: 'Invalid JSON body',
+                        message: parseError.message
+                    })
+                };
+            }
         } else if (event.cpf) {
             cpf = event.cpf;
         } else if (event.queryStringParameters && event.queryStringParameters.cpf) {
@@ -25,6 +48,9 @@ exports.handler = async (event) => {
             };
         }
 
+        console.log('CPF received:', cpf);
+
+        // Validar CPF
         const validationResult = CPFValidator.validate(cpf);
         if (!validationResult.isValid) {
             return {
@@ -38,8 +64,11 @@ exports.handler = async (event) => {
         }
 
         const cleanedCPF = validationResult.cleanedCPF;
+        console.log('Cleaned CPF:', cleanedCPF);
 
+        // Obter JWT do Cognito
         const jwtResult = await cognitoService.getCognitoJWT(cleanedCPF);
+        console.log('JWT Result:', jwtResult);
 
         if (!jwtResult.success) {
             return {
@@ -70,6 +99,7 @@ exports.handler = async (event) => {
 
     } catch (error) {
         console.error('Error in Lambda execution:', error);
+        console.error('Error stack:', error.stack);
 
         return {
             statusCode: 500,
