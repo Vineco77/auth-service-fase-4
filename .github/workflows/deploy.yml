@@ -44,6 +44,19 @@ jobs:
         aws s3 cp function.zip s3://$S3_BUCKET/function-$TIMESTAMP.zip
         echo "CODE_S3_URI=s3://$S3_BUCKET/function-$TIMESTAMP.zip" >> $GITHUB_ENV
 
+    - name: Carregar variáveis do .env se secrets não existirem
+      run: |
+        if [ -z "${{ secrets.COGNITO_USER_POOL_ID }}" ]; then
+          echo "⚠️ Usando .env para Cognito config"
+          source .env
+          echo "COGNITO_USER_POOL_ID=$COGNITO_USER_POOL_ID" >> $GITHUB_ENV
+          echo "COGNITO_CLIENT_ID=$COGNITO_CLIENT_ID" >> $GITHUB_ENV
+        else
+          echo "✅ Usando secrets do GitHub"
+          echo "COGNITO_USER_POOL_ID=${{ secrets.COGNITO_USER_POOL_ID }}" >> $GITHUB_ENV
+          echo "COGNITO_CLIENT_ID=${{ secrets.COGNITO_CLIENT_ID }}" >> $GITHUB_ENV
+        fi
+        
     - name: Deploy CloudFormation Stack
       run: |
         aws cloudformation deploy \

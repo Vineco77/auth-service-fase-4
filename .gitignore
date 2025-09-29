@@ -10,6 +10,4 @@ note.txt
 
 # Arquivos temporários
 *.zip
-.terraform/
-*.tfstate
-*.tfstate.backup
+cognito-policy.json
