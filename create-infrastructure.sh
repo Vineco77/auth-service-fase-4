@@ -7,6 +7,7 @@ USER_POOL_NAME="$PROJECT_NAME-user-pool"
 ROLE_NAME="$PROJECT_NAME-lambda-role"
 POLICY_NAME="$PROJECT_NAME-cognito-policy-CORRECTA"
 FUNCTION_NAME="$PROJECT_NAME-handler"
+API_NAME="$PROJECT_NAME-api"
 
 echo "🚀 Iniciando criação COMPLETA e CORRETA da infraestrutura..."
 
@@ -175,15 +176,90 @@ echo "📋 Empacotando Lambda..."
 zip -r function.zip src/ node_modules/ package.json .env
 
 echo "📋 Criando Lambda Function..."
-aws lambda create-function \
+LAMBDA_ARN=$(aws lambda create-function \
   --function-name $FUNCTION_NAME \
   --runtime nodejs18.x \
   --role $ROLE_ARN \
   --handler src/handlers/cpfHandler.handler \
   --zip-file fileb://function.zip \
   --environment "Variables={COGNITO_USER_POOL_ID=$USER_POOL_ID,COGNITO_CLIENT_ID=$CLIENT_ID}" \
-  --region $REGION
+  --query 'FunctionArn' \
+  --output text \
+  --region $REGION)
 check_command "create-function"
+echo "✅ Lambda criada: $LAMBDA_ARN"
+
+echo "📋 Aguardando Lambda ficar ativa..."
+sleep 10
+
+echo "📋 Criando API Gateway..."
+# CORREÇÃO: Criar API primeiro, depois adicionar a rota
+API_ID=$(aws apigatewayv2 create-api \
+  --name $API_NAME \
+  --protocol-type HTTP \
+  --query 'ApiId' \
+  --output text \
+  --region $REGION)
+check_command "create-api"
+echo "✅ API Gateway criado: $API_ID"
+
+echo "📋 Obtendo Integration ID..."
+INTEGRATION_ID=$(aws apigatewayv2 create-integration \
+  --api-id $API_ID \
+  --integration-type AWS_PROXY \
+  --integration-method POST \
+  --integration-uri arn:aws:apigateway:$REGION:lambda:path/2015-03-31/functions/$LAMBDA_ARN/invocations \
+  --payload-format-version "2.0" \
+  --query 'IntegrationId' \
+  --output text \
+  --region $REGION)
+check_command "create-integration"
+echo "✅ Integration criado: $INTEGRATION_ID"
+
+echo "📋 Criando rota /cadastro..."
+ROUTE_ID=$(aws apigatewayv2 create-route \
+  --api-id $API_ID \
+  --route-key "POST /cadastro" \
+  --target "integrations/$INTEGRATION_ID" \
+  --query 'RouteId' \
+  --output text \
+  --region $REGION)
+check_command "create-route"
+echo "✅ Rota criada: $ROUTE_ID"
+
+echo "📋 Criando deployment..."
+DEPLOYMENT_ID=$(aws apigatewayv2 create-deployment \
+  --api-id $API_ID \
+  --query 'DeploymentId' \
+  --output text \
+  --region $REGION)
+check_command "create-deployment"
+echo "✅ Deployment criado: $DEPLOYMENT_ID"
+
+echo "📋 Criando stage..."
+# CORREÇÃO: Remover --auto-deploy true
+aws apigatewayv2 create-stage \
+  --api-id $API_ID \
+  --stage-name '$default' \
+  --deployment-id $DEPLOYMENT_ID \
+  --region $REGION
+check_command "create-stage"
+echo "✅ Stage criado"
+
+echo "📋 Adicionando permissão para API Gateway invocar Lambda..."
+aws lambda add-permission \
+  --function-name $FUNCTION_NAME \
+  --statement-id api-gateway-invoke \
+  --action lambda:InvokeFunction \
+  --principal apigateway.amazonaws.com \
+  --source-arn "arn:aws:execute-api:$REGION:$ACCOUNT_ID:$API_ID/*/POST/cadastro" \
+  --region $REGION
+check_command "add-permission"
+echo "✅ Permissão concedida"
+
+echo "📋 Obtendo URL da API..."
+API_URL="https://$API_ID.execute-api.$REGION.amazonaws.com"
+echo "✅ API URL: $API_URL"
 
 echo "🎉 INFRAESTRUTURA CRIADA COM SUCESSO E 100% CORRETA!"
 echo "📍 User Pool: $USER_POOL_ID"
@@ -191,7 +267,14 @@ echo "🎯 Client ID: $CLIENT_ID"
 echo "👤 IAM Role: $ROLE_ARN"
 echo "🔐 IAM Policy: $POLICY_ARN"
 echo "🚀 Lambda: $FUNCTION_NAME"
+echo "🌐 API Gateway: $API_ID"
+echo "🔗 URL da API: $API_URL/cadastro"
 
 rm -f trust-policy.json cognito-policy.json function.zip
 
 echo "✅ PRONTO PARA TESTES DEFINITIVOS!"
+echo ""
+echo "📝 EXEMPLO DE USO:"
+echo "curl -X POST '$API_URL/cadastro' \\"
+echo "  -H 'Content-Type: application/json' \\"
+echo "  -d '{\"cpf\": \"123.456.789-09\"}'"
