@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template para Lambda CPF Cognito'
+
+Parameters:
+  FunctionName:
+    Type: String
+    Description: Nome da função Lambda
+  CodeS3Uri:
+    Type: String
+    Description: URI S3 do código da Lambda
+  CognitoUserPoolId:
+    Type: String
+    Description: ID do User Pool Cognito
+  CognitoClientId:
+    Type: String
+    Description: ID do Client Cognito
+
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${FunctionName}-execution-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: CognitoAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cognito-idp:AdminGetUser
+                  - cognito-idp:SignUp
+                  - cognito-idp:AdminInitiateAuth
+                  - cognito-idp:AdminSetUserPassword
+                  - cognito-idp:AdminCreateUser
+                Resource: !Sub 'arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${CognitoUserPoolId}'
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref FunctionName
+      Runtime: nodejs18.x
+      Handler: src/handlers/cpfHandler.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Uri: !Ref CodeS3Uri
+      Environment:
+        Variables:
+          COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
+          COGNITO_CLIENT_ID: !Ref CognitoClientId
+          NODE_ENV: production
+      Timeout: 30
+
+Outputs:
+  LambdaFunctionArn:
+    Description: ARN da função Lambda
+    Value: !GetAtt LambdaFunction.Arn
+    Export:
+      Name: !Sub '${FunctionName}-Arn'
+
+  LambdaFunctionName:
+    Description: Nome da função Lambda
+    Value: !Ref FunctionName
+    Export:
+      Name: !Sub '${FunctionName}-Name'

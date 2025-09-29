@@ -1,82 +1,63 @@
-name: Deploy Lambda Function
+name: Deploy Lambda to AWS
 
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
+    paths:
+      - 'src/**'           
+      - 'package.json'     
+      - '.github/workflows/templates/lambda-template.yml'  
 
 env:
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-  S3_BUCKET: tech-challenge-lambda-code-${{ github.repository_id }}
-  TF_WORKSPACE: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+  AWS_REGION: 'us-east-1'
+  LAMBDA_FUNCTION_NAME: 'cpf-cognito-lambda-handler'
+  S3_BUCKET: 'cpf-cognito-lambda-artifacts'
+  STACK_NAME: 'cpf-cognito-lambda-stack'
 
 jobs:
-  deploy:
+  deploy-lambda:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-
+    
     steps:
-    - name: Checkout code
+    - name: Checkout código
       uses: actions/checkout@v4
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
+    - name: Configurar AWS CLI
+      uses: aws-actions/configure-aws-credentials@v2
       with:
-        node-version: '18'
-        cache: 'npm'
-
-    - name: Install dependencies
-      run: npm ci
-
-    # - name: Run tests
-    #   run: npm test
-
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
-        role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-role-${{ env.TF_WORKSPACE }}
-        role-session-name: GitHubActions-Deploy
 
-    - name: Setup Terraform
+    - name: Criar bucket S3 se não existir
       run: |
-        cd terraform
-        terraform workspace select $TF_WORKSPACE || terraform workspace new $TF_WORKSPACE
-        terraform init
+        aws s3 ls s3://$S3_BUCKET || aws s3 mb s3://$S3_BUCKET --region $AWS_REGION
 
-    - name: Terraform Apply
-      if: github.ref == 'refs/heads/main'
+    - name: Instalar dependências e empacotar Lambda
       run: |
-        cd terraform
-        terraform apply -auto-approve tfplan
+        npm ci --production
+        zip -r function.zip src/ node_modules/ package.json .env
 
-    - name: Get Terraform outputs
+    - name: Fazer upload do código para S3
       run: |
-        cd terraform
-        terraform output -json > tf_output.json
-        echo "S3_BUCKET=$(jq -r '.lambda_s3_bucket_name.value' tf_output.json)" >> $GITHUB_ENV
+        TIMESTAMP=$(date +%Y%m%d%H%M%S)
+        aws s3 cp function.zip s3://$S3_BUCKET/function-$TIMESTAMP.zip
+        echo "CODE_S3_URI=s3://$S3_BUCKET/function-$TIMESTAMP.zip" >> $GITHUB_ENV
 
-    - name: Create deployment package
+    - name: Deploy CloudFormation Stack
       run: |
-        mkdir -p dist
-        cp -r src node_modules package.json .env dist/
-        cd dist && zip -r ../function.zip . && cd ..
+        aws cloudformation deploy \
+          --template-file .github/workflows/templates/lambda-template.yml \
+          --stack-name $STACK_NAME \
+          --parameter-overrides \
+            FunctionName=$LAMBDA_FUNCTION_NAME \
+            CodeS3Uri=${{ env.CODE_S3_URI }} \
+            CognitoUserPoolId=${{ secrets.COGNITO_USER_POOL_ID }} \
+            CognitoClientId=${{ secrets.COGNITO_CLIENT_ID }} \
+          --capabilities CAPABILITY_NAMED_IAM
 
-    - name: Upload to S3
+    - name: Verificar deploy
       run: |
-        aws s3 cp function.zip s3://$S3_BUCKET/lambda-auth-function/${{ github.sha }}.zip
-
-    - name: Terraform Plan
-      run: |
-        cd terraform
-        terraform plan \
-          -var="lambda_s3_bucket=$S3_BUCKET" \
-          -var="lambda_s3_key=lambda-auth-function/${{ github.sha }}.zip" \
-          -var="environment=$TF_WORKSPACE" \
-          -out=tfplan
-
-    - name: Cleanup
-      run: rm -f function.zip
+        echo "✅ Lambda deployada com sucesso!"
+        echo "📦 Código: ${{ env.CODE_S3_URI }}"
+        echo "🔧 Função: $LAMBDA_FUNCTION_NAME"
