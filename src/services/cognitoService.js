@@ -204,7 +204,7 @@ class CognitoService {
                 }
             }
 
-            console.log('❌ Falha completa no processo de JWT');
+            console.log('❌ Falha completa no processo de JWT.');
 
             return {
                 success: false,

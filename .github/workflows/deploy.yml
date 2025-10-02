@@ -53,9 +53,9 @@ jobs:
     - name: Fazer upload do código para S3
       run: |
         TIMESTAMP=$(date +%Y%m%d%H%M%S)
-        aws s3 cp function.zip s3://$S3_BUCKET/function-$TIMESTAMP.zip
-        echo "CODE_S3_URI=s3://$S3_BUCKET/function-$TIMESTAMP.zip" >> $GITHUB_ENV
-        echo "📤 Código enviado para S3: ${{ env.CODE_S3_URI }}"
+        S3_KEY="functions/function-$STACK_NAME-$AWS_REGION-latest.zip"
+        aws s3 cp function.zip "s3://$S3_BUCKET/$S3_KEY"
+        echo "📤 Código enviado para S3: s3://$S3_BUCKET/$S3_KEY"
 
     - name: Verificar e limpar stack corrompido se necessário
       run: |

@@ -51,7 +51,9 @@ Resources:
       Handler: src/handlers/cpfHandler.handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Code:
-        S3Uri: !Ref CodeS3Uri
+        S3Bucket: cpf-cognito-lambda-artifacts  # ← BUCKET FIXO
+        S3Key: !Sub |
+          functions/function-${AWS::StackName}-${AWS::Region}-latest.zip
       Environment:
         Variables:
           COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
