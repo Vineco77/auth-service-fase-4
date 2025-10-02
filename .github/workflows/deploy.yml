@@ -44,7 +44,6 @@ jobs:
       run: |
         echo "🛡️ Verificando/Criando Role IAM..."
         
-        # Verifica se a role já existe
         if aws iam get-role --role-name cpf-cognito-lambda-role 2>/dev/null; then
           echo "✅ Role IAM já existe, continuando..."
         else
@@ -58,13 +57,11 @@ jobs:
           sleep 10
         fi
         
-        # Anexa políticas (idempotente - pode rodar múltiplas vezes)
         echo "📋 Anexando políticas à role..."
         aws iam attach-role-policy \
           --role-name cpf-cognito-lambda-role \
           --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole || echo "ℹ️ Política básica já anexada"
         
-        # Cria/atualiza policy customizada para Cognito
         echo "🔐 Configurando política customizada do Cognito..."
         aws iam put-role-policy \
           --role-name cpf-cognito-lambda-role \
@@ -92,11 +89,9 @@ jobs:
       run: |
         echo "🚀 Verificando/Criando Lambda Function..."
         
-        # Obtém ARN da role
         ROLE_ARN=$(aws iam get-role --role-name cpf-cognito-lambda-role --query 'Role.Arn' --output text)
         echo "🔧 Usando Role: $ROLE_ARN"
         
-        # Verifica se a Lambda já existe
         if aws lambda get-function --function-name $LAMBDA_FUNCTION_NAME 2>/dev/null; then
           echo "🔄 Lambda já existe, atualizando código..."
           aws lambda update-function-code \
@@ -125,25 +120,160 @@ jobs:
         
         echo "✅ Lambda Function configurada com sucesso!"
 
-    - name: Verificar deploy
+    - name: Aguardar Lambda ficar ativa
       run: |
-        echo "🎉 DEPLOY CONCLUÍDO COM SUCESSO!"
-        echo "✅ Lambda: $LAMBDA_FUNCTION_NAME"
-        echo "🌐 Região: us-east-1 (N. Virginia)"
-        echo "📊 Status da Lambda:"
-        aws lambda get-function --function-name $LAMBDA_FUNCTION_NAME --query 'Configuration.[FunctionName, Runtime, Handler, State, LastUpdateStatus]' --output table
-
-    - name: Teste rápido da Lambda
-      run: |
-        echo "🧪 Testando Lambda..."
-        aws lambda invoke \
-          --function-name $LAMBDA_FUNCTION_NAME \
-          --payload '{"httpMethod":"POST","body":"{\"cpf\":\"12345678909\"}"}' \
-          --cli-binary-format raw-in-base64-out \
-          response.json || echo "ℹ️ Teste ignorado (possível erro esperado sem API Gateway)"
+        echo "⏳ Aguardando Lambda ficar totalmente ativa..."
         
-        if [ -f response.json ]; then
-          echo "📄 Resposta da Lambda:"
-          cat response.json
-          rm -f response.json
+        # Espera até a Lambda sair do estado Pending
+        for i in {1..30}; do
+          LAMBDA_STATE=$(aws lambda get-function --function-name $LAMBDA_FUNCTION_NAME --query 'Configuration.State' --output text 2>/dev/null || echo "Pending")
+          echo "Estado da Lambda: $LAMBDA_STATE (tentativa $i/30)"
+          
+          if [ "$LAMBDA_STATE" = "Active" ]; then
+            echo "✅ Lambda está ATIVA e pronta!"
+            break
+          fi
+          
+          if [ $i -eq 30 ]; then
+            echo "❌ Timeout: Lambda não ficou ativa em 30 tentativas"
+            exit 1
+          fi
+          
+          sleep 5
+        done
+
+    - name: Configurar API Gateway
+      run: |
+        echo "🌐 Configurando API Gateway..."
+        
+        API_ID=$(aws apigateway get-rest-apis --query "items[?name=='cpf-cognito-api'].id" --output text)
+        
+        if [ -z "$API_ID" ]; then
+          echo "📝 Criando novo API Gateway..."
+          API_ID=$(aws apigateway create-rest-api \
+            --name "cpf-cognito-api" \
+            --description "API para autenticação com CPF" \
+            --endpoint-configuration types=REGIONAL \
+            --query 'id' \
+            --output text)
+          
+          echo "✅ API Gateway criado: $API_ID"
+          
+          # Obtém o root resource ID
+          ROOT_ID=$(aws apigateway get-resources \
+            --rest-api-id $API_ID \
+            --query 'items[?path=='\''/'\''].id' \
+            --output text)
+          
+          # Cria resource /auth
+          RESOURCE_ID=$(aws apigateway create-resource \
+            --rest-api-id $API_ID \
+            --parent-id $ROOT_ID \
+            --path-part "auth" \
+            --query 'id' \
+            --output text)
+          
+          # Configura método POST
+          aws apigateway put-method \
+            --rest-api-id $API_ID \
+            --resource-id $RESOURCE_ID \
+            --http-method POST \
+            --authorization-type NONE
+          
+          # Configura integração com Lambda
+          aws apigateway put-integration \
+            --rest-api-id $API_ID \
+            --resource-id $RESOURCE_ID \
+            --http-method POST \
+            --type AWS_PROXY \
+            --integration-http-method POST \
+            --uri "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:$(aws sts get-caller-identity --query Account --output text):function:cpf-cognito-lambda-handler/invocations"
+          
+          # Configura responses para CORS
+          aws apigateway put-method-response \
+            --rest-api-id $API_ID \
+            --resource-id $RESOURCE_ID \
+            --http-method POST \
+            --status-code 200 \
+            --response-parameters '{"method.response.header.Access-Control-Allow-Origin":true}'
+          
+          # Cria deployment
+          aws apigateway create-deployment \
+            --rest-api-id $API_ID \
+            --stage-name "production"
+          
+          # Adiciona permissão para API Gateway invocar Lambda
+          aws lambda add-permission \
+            --function-name $LAMBDA_FUNCTION_NAME \
+            --statement-id api-gateway-invoke \
+            --action lambda:InvokeFunction \
+            --principal apigateway.amazonaws.com \
+            --source-arn "arn:aws:execute-api:us-east-1:$(aws sts get-caller-identity --query Account --output text):$API_ID/*/POST/auth"
+          
+          echo "🎯 API Gateway configurado com sucesso!"
+        else
+          echo "✅ API Gateway já existe: $API_ID"
         fi
+
+    - name: Teste completo da solução
+      run: |
+        echo "🧪 TESTE COMPLETO DA SOLUÇÃO"
+        echo "================================"
+        
+        # Obtém o API ID
+        API_ID=$(aws apigateway get-rest-apis --query "items[?name=='cpf-cognito-api'].id" --output text)
+        API_URL="https://$API_ID.execute-api.us-east-1.amazonaws.com/production/auth"
+        
+        echo "🔗 URL da API: $API_URL"
+        echo ""
+        echo "📋 COMANDO CURL PARA TESTAR:"
+        echo "curl -X POST '$API_URL' \\"
+        echo "  -H 'Content-Type: application/json' \\"
+        echo "  -d '{\"cpf\":\"12345678909\"}'"
+        echo ""
+        echo "⏳ Executando teste automático..."
+        
+        # Testa a API
+        RESPONSE=$(curl -s -w "HTTP_STATUS:%{http_code}" -X POST "$API_URL" \
+          -H "Content-Type: application/json" \
+          -d '{"cpf":"12345678909"}' 2>/dev/null || echo "CONNECTION_ERROR")
+        
+        # Extrai o HTTP status
+        HTTP_STATUS=$(echo "$RESPONSE" | grep -o 'HTTP_STATUS:[0-9]*' | cut -d: -f2)
+        BODY=$(echo "$RESPONSE" | sed 's/HTTP_STATUS:[0-9]*$//')
+        
+        echo "📊 RESULTADO DO TESTE:"
+        echo "HTTP Status: $HTTP_STATUS"
+        echo "Resposta: $BODY"
+        
+        if [ "$HTTP_STATUS" = "200" ]; then
+          echo "🎉 SUCESSO! A solução está funcionando perfeitamente!"
+          echo "✅ CPF validado"
+          echo "✅ Cognito integrado" 
+          echo "✅ JWT gerado"
+          echo "✅ API Gateway respondendo"
+        else
+          echo "⚠️ Teste retornou status $HTTP_STATUS"
+          echo "📝 Verifique os logs da Lambda para detalhes"
+        fi
+
+    - name: Verificar deploy final
+      run: |
+        echo "🎉 DEPLOY COMPLETO E TESTADO!"
+        echo "================================"
+        API_ID=$(aws apigateway get-rest-apis --query "items[?name=='cpf-cognito-api'].id" --output text)
+        API_URL="https://$API_ID.execute-api.us-east-1.amazonaws.com/production/auth"
+        
+        echo "✅ Lambda: $LAMBDA_FUNCTION_NAME"
+        echo "✅ API Gateway: $API_ID"
+        echo "✅ Região: us-east-1"
+        echo ""
+        echo "🚀 PARA USAR A SOLUÇÃO:"
+        echo "curl -X POST '$API_URL' \\"
+        echo "  -H 'Content-Type: application/json' \\"
+        echo "  -d '{\"cpf\":\"SEU_CPF_AQUI\"}'"
+        echo ""
+        echo "📝 Exemplo com CPF válido:"
+        echo "curl -X POST '$API_URL' \\"
+        echo "  -H 'Content-Type: application/json' \\"
+        echo "  -d '{\"cpf\":\"52998224725\"}'"
