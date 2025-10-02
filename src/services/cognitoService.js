@@ -59,7 +59,7 @@ class CognitoService {
             if (error.name === 'UsernameExistsException') {
                 return {
                     success: false,
-                    message: 'Usuário já existe no Cognito'
+                    message: 'Usuário já existe no Cognito.'
                 };
             }
             throw error;

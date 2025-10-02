@@ -33,11 +33,10 @@ jobs:
         aws lambda delete-function --function-name $LAMBDA_FUNCTION_NAME && \
         echo "✅ Lambda anterior deletada" || echo "ℹ️ Lambda não existia"
         
-        # Verifica e deleta o stack CloudFormation se existir  
-        aws cloudformation describe-stacks --stack-name $STACK_NAME 2>/dev/null && \
-        aws cloudformation delete-stack --stack-name $STACK_NAME && \
-        echo "⏳ Aguardando deleção do stack..." && \
-        sleep 30 || echo "ℹ️ Stack não existia"
+        # Limpa role IAM se existir
+        aws iam get-role --role-name cpf-cognito-lambda-role 2>/dev/null && \
+        aws iam delete-role --role-name cpf-cognito-lambda-role && \
+        echo "✅ Role IAM deletada" || echo "ℹ️ Role IAM não existia"
       continue-on-error: true
 
     - name: Criar .env dinamicamente
@@ -57,7 +56,7 @@ jobs:
         zip -r function.zip src/ node_modules/ package.json .env
         echo "📦 Package criado: function.zip"
 
-    - name: Criar Lambda diretamente (sem CloudFormation)
+    - name: Criar Lambda diretamente 
       run: |
         echo "🚀 Criando Lambda diretamente..."
         
@@ -87,7 +86,7 @@ jobs:
                   "cognito-idp:AdminInitiateAuth",
                   "cognito-idp:AdminSetUserPassword"
                 ],
-                "Resource": "arn:aws:cognito-idp:us-east-1:440744254772:userpool/${{ secrets.COGNITO_USER_POOL_ID }}"
+                "Resource": "arn:aws:cognito-idp:us-east-1:'$(aws sts get-caller-identity --query Account --output text)':userpool/'${{ secrets.COGNITO_USER_POOL_ID }}'"
               }
             ]
           }'
@@ -99,10 +98,10 @@ jobs:
         aws lambda create-function \
           --function-name $LAMBDA_FUNCTION_NAME \
           --runtime nodejs18.x \
-          --role arn:aws:iam::440744254772:role/cpf-cognito-lambda-role \
+          --role arn:aws:iam::'$(aws sts get-caller-identity --query Account --output text)':role/cpf-cognito-lambda-role \
           --handler src/handlers/cpfHandler.handler \
           --zip-file fileb://function.zip \
-          --environment Variables="{COGNITO_USER_POOL_ID=${{ secrets.COGNITO_USER_POOL_ID }},COGNITO_CLIENT_ID=${{ secrets.COGNITO_CLIENT_ID }},NODE_ENV=production,AWS_REGION=us-east-1}" \
+          --environment Variables="{COGNITO_USER_POOL_ID=${{ secrets.COGNITO_USER_POOL_ID }},COGNITO_CLIENT_ID=${{ secrets.COGNITO_CLIENT_ID }},NODE_ENV=production}" \
           --timeout 15 \
           --memory-size 128
         
@@ -112,4 +111,5 @@ jobs:
       run: |
         echo "🎉 DEPLOY CONCLUÍDO COM SUCESSO!"
         echo "✅ Lambda: $LAMBDA_FUNCTION_NAME"
+        echo "🌐 Região: us-east-1 (N. Virginia)"
         aws lambda get-function --function-name $LAMBDA_FUNCTION_NAME --query 'Configuration.[FunctionName, Runtime, Handler, State]' --output table
