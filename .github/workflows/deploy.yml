@@ -4,9 +4,9 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'src/**'           
-      - 'package.json'     
-      - '.github/workflows/templates/lambda-template.yml'  
+      - 'src/**'
+      - 'package.json'
+      - '.github/workflows/templates/lambda-template.yml'
 
 env:
   AWS_REGION: 'us-east-1'
@@ -33,32 +33,39 @@ jobs:
       run: |
         aws s3 ls s3://$S3_BUCKET || aws s3 mb s3://$S3_BUCKET --region $AWS_REGION
 
+    - name: Criar .env dinamicamente para o package
+      run: |
+        echo "🔧 Criando .env para o package..."
+        cat > .env << EOF
+        COGNITO_USER_POOL_ID=${{ secrets.COGNITO_USER_POOL_ID }}
+        COGNITO_CLIENT_ID=${{ secrets.COGNITO_CLIENT_ID }}
+        NODE_ENV=production
+        AWS_REGION=us-east-1
+        EOF
+        echo "✅ .env criado com sucesso!"
+
     - name: Instalar dependências e empacotar Lambda
       run: |
         npm ci --production
         zip -r function.zip src/ node_modules/ package.json .env
+        echo "📦 Package criado: function.zip"
 
     - name: Fazer upload do código para S3
       run: |
         TIMESTAMP=$(date +%Y%m%d%H%M%S)
         aws s3 cp function.zip s3://$S3_BUCKET/function-$TIMESTAMP.zip
         echo "CODE_S3_URI=s3://$S3_BUCKET/function-$TIMESTAMP.zip" >> $GITHUB_ENV
+        echo "📤 Código enviado para S3: ${{ env.CODE_S3_URI }}"
 
-    - name: Carregar variáveis do .env se secrets não existirem
-      run: |
-        if [ -z "${{ secrets.COGNITO_USER_POOL_ID }}" ]; then
-          echo "⚠️ Usando .env para Cognito config"
-          source .env
-          echo "COGNITO_USER_POOL_ID=$COGNITO_USER_POOL_ID" >> $GITHUB_ENV
-          echo "COGNITO_CLIENT_ID=$COGNITO_CLIENT_ID" >> $GITHUB_ENV
-        else
-          echo "✅ Usando secrets do GitHub"
-          echo "COGNITO_USER_POOL_ID=${{ secrets.COGNITO_USER_POOL_ID }}" >> $GITHUB_ENV
-          echo "COGNITO_CLIENT_ID=${{ secrets.COGNITO_CLIENT_ID }}" >> $GITHUB_ENV
-        fi
-        
     - name: Deploy CloudFormation Stack
       run: |
+        echo "🚀 Iniciando deploy do CloudFormation..."
+        echo "📋 Parâmetros:"
+        echo "   Function: $LAMBDA_FUNCTION_NAME"
+        echo "   S3 URI: ${{ env.CODE_S3_URI }}"
+        echo "   User Pool: ${{ secrets.COGNITO_USER_POOL_ID }}"
+        echo "   Client ID: ${{ secrets.COGNITO_CLIENT_ID }}"
+        
         aws cloudformation deploy \
           --template-file .github/workflows/templates/lambda-template.yml \
           --stack-name $STACK_NAME \
@@ -71,6 +78,8 @@ jobs:
 
     - name: Verificar deploy
       run: |
-        echo "✅ Lambda deployada com sucesso!"
+        echo "🎉 DEPLOY CONCLUÍDO COM SUCESSO!"
+        echo "✅ Lambda: $LAMBDA_FUNCTION_NAME"
         echo "📦 Código: ${{ env.CODE_S3_URI }}"
-        echo "🔧 Função: $LAMBDA_FUNCTION_NAME"
+        echo "🔧 Stack: $STACK_NAME"
+        echo "🌐 Região: $AWS_REGION"
