@@ -53,26 +53,9 @@ jobs:
         zip -r function-${{ steps.git-commit.outputs.commit }}.zip src/ node_modules/ package.json .env
         echo "📦 Package criado: function-${{ steps.git-commit.outputs.commit }}.zip"
 
-    - name: Fazer upload do ZIP para S3
+    - name: Deploy CloudFormation Stack (Infrastructure Only)
       run: |
-        echo "📤 Fazendo upload do package para S3..."
-        # Primeiro verifica/cria o bucket
-        aws s3 ls "s3://$LAMBDA_FUNCTION_NAME-artifacts-$(aws sts get-caller-identity --query Account --output text)" || \
-        aws s3 mb "s3://$LAMBDA_FUNCTION_NAME-artifacts-$(aws sts get-caller-identity --query Account --output text)" --region $AWS_REGION
-        
-        # Faz upload do ZIP
-        aws s3 cp function-${{ steps.git-commit.outputs.commit }}.zip \
-          "s3://$LAMBDA_FUNCTION_NAME-artifacts-$(aws sts get-caller-identity --query Account --output text)/functions/$ENVIRONMENT/function-${{ steps.git-commit.outputs.commit }}.zip"
-        echo "✅ Package enviado para S3"
-
-    - name: Deploy CloudFormation Stack
-      run: |
-        echo "🚀 Iniciando deploy do CloudFormation..."
-        echo "📋 Parâmetros:"
-        echo "   Function: $LAMBDA_FUNCTION_NAME"
-        echo "   Commit: ${{ steps.git-commit.outputs.commit }}"
-        echo "   Environment: $ENVIRONMENT"
-        
+        echo "🚀 Criando/Atualizando infraestrutura..."
         aws cloudformation deploy \
           --template-file .github/workflows/templates/lambda-template.yml \
           --stack-name $STACK_NAME \
@@ -81,9 +64,16 @@ jobs:
             CognitoUserPoolId=${{ secrets.COGNITO_USER_POOL_ID }} \
             CognitoClientId=${{ secrets.COGNITO_CLIENT_ID }} \
             Environment=$ENVIRONMENT \
-            GitCommit=${{ steps.git-commit.outputs.commit }} \
           --capabilities CAPABILITY_NAMED_IAM \
           --no-fail-on-empty-changeset
+
+    - name: Update Lambda Function Code
+      run: |
+        echo "🔄 Atualizando código da Lambda..."
+        aws lambda update-function-code \
+          --function-name $LAMBDA_FUNCTION_NAME \
+          --zip-file fileb://function-${{ steps.git-commit.outputs.commit }}.zip
+        echo "✅ Código da Lambda atualizado com sucesso!"
 
     - name: Verificar deploy
       run: |
@@ -96,3 +86,12 @@ jobs:
           --stack-name $STACK_NAME \
           --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayUrl`].OutputValue' \
           --output text
+
+    - name: Debug CloudFormation Failure
+      if: failure()
+      run: |
+        echo "🔍 DEBUG - CloudFormation Stack Events:"
+        aws cloudformation describe-stack-events \
+          --stack-name $STACK_NAME \
+          --query 'StackEvents[?contains(ResourceStatus, `FAILED`)].[LogicalResourceId, ResourceType, ResourceStatus, ResourceStatusReason]' \
+          --output table
