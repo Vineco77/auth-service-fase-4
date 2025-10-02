@@ -5,9 +5,6 @@ Parameters:
   FunctionName:
     Type: String
     Description: Nome da função Lambda
-  CodeS3Uri:
-    Type: String
-    Description: URI S3 do código da Lambda
   CognitoUserPoolId:
     Type: String
     Description: ID do User Pool Cognito
@@ -51,9 +48,8 @@ Resources:
       Handler: src/handlers/cpfHandler.handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Code:
-        S3Bucket: cpf-cognito-lambda-artifacts  # ← BUCKET FIXO
-        S3Key: !Sub |
-          functions/function-${AWS::StackName}-${AWS::Region}-latest.zip
+        S3Bucket: cpf-cognito-lambda-artifacts
+        S3Key: functions/function-latest.zip
       Environment:
         Variables:
           COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
