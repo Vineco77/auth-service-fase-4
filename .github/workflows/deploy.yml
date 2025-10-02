@@ -3,16 +3,11 @@ name: Deploy Lambda to AWS
 on:
   push:
     branches: [ main ]
-    paths:
-      - 'src/**'
-      - 'package.json'
-      - '.github/workflows/templates/lambda-template.yml'
 
 env:
   AWS_REGION: 'us-east-1'
   LAMBDA_FUNCTION_NAME: 'cpf-cognito-lambda-handler'
   STACK_NAME: 'cpf-cognito-lambda-stack'
-  ENVIRONMENT: 'production'
 
 jobs:
   deploy-lambda:
@@ -21,13 +16,6 @@ jobs:
     steps:
     - name: Checkout código
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-
-    - name: Get Git commit hash
-      id: git-commit
-      run: |
-        echo "commit=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
     - name: Configurar AWS CLI
       uses: aws-actions/configure-aws-credentials@v2
@@ -36,62 +24,92 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
+    - name: Limpar recursos anteriores
+      run: |
+        echo "🧹 Limpando recursos anteriores..."
+        
+        # Verifica e deleta a Lambda se existir
+        aws lambda get-function --function-name $LAMBDA_FUNCTION_NAME 2>/dev/null && \
+        aws lambda delete-function --function-name $LAMBDA_FUNCTION_NAME && \
+        echo "✅ Lambda anterior deletada" || echo "ℹ️ Lambda não existia"
+        
+        # Verifica e deleta o stack CloudFormation se existir  
+        aws cloudformation describe-stacks --stack-name $STACK_NAME 2>/dev/null && \
+        aws cloudformation delete-stack --stack-name $STACK_NAME && \
+        echo "⏳ Aguardando deleção do stack..." && \
+        sleep 30 || echo "ℹ️ Stack não existia"
+      continue-on-error: true
+
     - name: Criar .env dinamicamente
       run: |
         echo "🔧 Criando .env..."
         cat > .env << EOF
         COGNITO_USER_POOL_ID=${{ secrets.COGNITO_USER_POOL_ID }}
         COGNITO_CLIENT_ID=${{ secrets.COGNITO_CLIENT_ID }}
-        NODE_ENV=${{ env.ENVIRONMENT }}
-        AWS_REGION=${{ env.AWS_REGION }}
+        NODE_ENV=production
+        AWS_REGION=us-east-1
         EOF
         echo "✅ .env criado com sucesso!"
 
     - name: Instalar dependências e empacotar Lambda
       run: |
         npm ci --production
-        zip -r function-${{ steps.git-commit.outputs.commit }}.zip src/ node_modules/ package.json .env
-        echo "📦 Package criado: function-${{ steps.git-commit.outputs.commit }}.zip"
+        zip -r function.zip src/ node_modules/ package.json .env
+        echo "📦 Package criado: function.zip"
 
-    - name: Deploy CloudFormation Stack (Infrastructure Only)
+    - name: Criar Lambda diretamente (sem CloudFormation)
       run: |
-        echo "🚀 Criando/Atualizando infraestrutura..."
-        aws cloudformation deploy \
-          --template-file .github/workflows/templates/lambda-template.yml \
-          --stack-name $STACK_NAME \
-          --parameter-overrides \
-            FunctionName=$LAMBDA_FUNCTION_NAME \
-            CognitoUserPoolId=${{ secrets.COGNITO_USER_POOL_ID }} \
-            CognitoClientId=${{ secrets.COGNITO_CLIENT_ID }} \
-            Environment=$ENVIRONMENT \
-          --capabilities CAPABILITY_NAMED_IAM \
-          --no-fail-on-empty-changeset
-
-    - name: Update Lambda Function Code
-      run: |
-        echo "🔄 Atualizando código da Lambda..."
-        aws lambda update-function-code \
+        echo "🚀 Criando Lambda diretamente..."
+        
+        # Cria role IAM primeiro
+        aws iam create-role \
+          --role-name cpf-cognito-lambda-role \
+          --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}' \
+          --description "Role para Lambda CPF Cognito"
+        
+        # Anexa políticas à role
+        aws iam attach-role-policy \
+          --role-name cpf-cognito-lambda-role \
+          --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        
+        # Cria policy customizada para Cognito
+        aws iam put-role-policy \
+          --role-name cpf-cognito-lambda-role \
+          --policy-name CognitoAccess \
+          --policy-document '{
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": [
+                  "cognito-idp:AdminGetUser",
+                  "cognito-idp:SignUp", 
+                  "cognito-idp:AdminInitiateAuth",
+                  "cognito-idp:AdminSetUserPassword"
+                ],
+                "Resource": "arn:aws:cognito-idp:us-east-1:440744254772:userpool/${{ secrets.COGNITO_USER_POOL_ID }}"
+              }
+            ]
+          }'
+        
+        echo "⏳ Aguardando role ficar disponível..."
+        sleep 10
+        
+        # Cria a Lambda
+        aws lambda create-function \
           --function-name $LAMBDA_FUNCTION_NAME \
-          --zip-file fileb://function-${{ steps.git-commit.outputs.commit }}.zip
-        echo "✅ Código da Lambda atualizado com sucesso!"
+          --runtime nodejs18.x \
+          --role arn:aws:iam::440744254772:role/cpf-cognito-lambda-role \
+          --handler src/handlers/cpfHandler.handler \
+          --zip-file fileb://function.zip \
+          --environment Variables="{COGNITO_USER_POOL_ID=${{ secrets.COGNITO_USER_POOL_ID }},COGNITO_CLIENT_ID=${{ secrets.COGNITO_CLIENT_ID }},NODE_ENV=production,AWS_REGION=us-east-1}" \
+          --timeout 15 \
+          --memory-size 128
+        
+        echo "✅ Lambda criada com sucesso!"
 
     - name: Verificar deploy
       run: |
         echo "🎉 DEPLOY CONCLUÍDO COM SUCESSO!"
         echo "✅ Lambda: $LAMBDA_FUNCTION_NAME"
-        echo "🔧 Stack: $STACK_NAME"
-        echo "🌐 Região: $AWS_REGION"
-        echo "🔗 API URL:"
-        aws cloudformation describe-stacks \
-          --stack-name $STACK_NAME \
-          --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayUrl`].OutputValue' \
-          --output text
-
-    - name: Debug CloudFormation Failure
-      if: failure()
-      run: |
-        echo "🔍 DEBUG - CloudFormation Stack Events:"
-        aws cloudformation describe-stack-events \
-          --stack-name $STACK_NAME \
-          --query 'StackEvents[?contains(ResourceStatus, `FAILED`)].[LogicalResourceId, ResourceType, ResourceStatus, ResourceStatusReason]' \
-          --output table
+        aws lambda get-function --function-name $LAMBDA_FUNCTION_NAME --query 'Configuration.[FunctionName, Runtime, Handler, State]' --output table
