@@ -57,6 +57,23 @@ jobs:
         echo "CODE_S3_URI=s3://$S3_BUCKET/function-$TIMESTAMP.zip" >> $GITHUB_ENV
         echo "📤 Código enviado para S3: ${{ env.CODE_S3_URI }}"
 
+    - name: Verificar e limpar stack corrompido se necessário
+      run: |
+        echo "🔍 Verificando estado do CloudFormation stack..."
+        STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "NOT_EXIST")
+        
+        if [ "$STACK_STATUS" = "ROLLBACK_COMPLETE" ] || [ "$STACK_STATUS" = "ROLLBACK_FAILED" ]; then
+          echo "⚠️ Stack em estado corrompido ($STACK_STATUS). Deletando..."
+          aws cloudformation delete-stack --stack-name $STACK_NAME --region $AWS_REGION
+          echo "⏳ Aguardando deleção..."
+          sleep 30
+          echo "✅ Stack corrompido removido"
+        elif [ "$STACK_STATUS" = "NOT_EXIST" ]; then
+          echo "✅ Stack não existe, será criado novo"
+        else
+          echo "✅ Stack em estado saudável: $STACK_STATUS"
+        fi
+
     - name: Deploy CloudFormation Stack
       run: |
         echo "🚀 Iniciando deploy do CloudFormation..."

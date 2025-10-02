@@ -208,7 +208,7 @@ class CognitoService {
 
             return {
                 success: false,
-                message: 'Falha ao obter JWT após criação do usuário'
+                message: 'Falha ao obter JWT após criação do usuário.'
             }
 
         } catch (error) {
