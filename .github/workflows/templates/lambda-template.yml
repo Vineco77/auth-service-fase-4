@@ -1,16 +1,22 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'CloudFormation template para Lambda CPF Cognito'
+Description: 'CloudFormation template para Lambda CPF Cognito com API Gateway'
 
 Parameters:
   FunctionName:
     Type: String
     Description: Nome da função Lambda
+    Default: 'cpf-cognito-lambda-handler'
   CognitoUserPoolId:
     Type: String
     Description: ID do User Pool Cognito
   CognitoClientId:
     Type: String
     Description: ID do Client Cognito
+  Environment:
+    Type: String
+    Description: Ambiente de deploy
+    Default: 'production'
+    AllowedValues: ['development', 'staging', 'production']
 
 Resources:
   LambdaExecutionRole:
@@ -27,18 +33,16 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Policies:
-        - PolicyName: CognitoAccess
+        - PolicyName: CognitoFullAccess
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
                 Action:
-                  - cognito-idp:AdminGetUser
-                  - cognito-idp:SignUp
-                  - cognito-idp:AdminInitiateAuth
-                  - cognito-idp:AdminSetUserPassword
-                  - cognito-idp:AdminCreateUser
-                Resource: !Sub 'arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${CognitoUserPoolId}'
+                  - cognito-idp:*
+                Resource: 
+                  - !Sub 'arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${CognitoUserPoolId}'
+                  - !Sub 'arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${CognitoUserPoolId}/*'
 
   LambdaFunction:
     Type: AWS::Lambda::Function
@@ -48,16 +52,88 @@ Resources:
       Handler: src/handlers/cpfHandler.handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Code:
-        S3Bucket: cpf-cognito-lambda-artifacts
-        S3Key: functions/function-latest.zip
+        S3Bucket: !Ref ArtifactsBucket
+        S3Key: !Sub 'functions/${Environment}/function-${GitCommit}.zip'
       Environment:
         Variables:
           COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
           COGNITO_CLIENT_ID: !Ref CognitoClientId
-          NODE_ENV: production
-      Timeout: 30
+          NODE_ENV: !Ref Environment
+          AWS_REGION: !Ref AWS::Region
+      Timeout: 15
+      MemorySize: 128
+
+  ApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub '${FunctionName}-api'
+      Description: API Gateway para autenticação por CPF
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+  ApiResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: 'auth'
+
+  ApiMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ApiResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 
+          - 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaArn}/invocations'
+          - LambdaArn: !GetAtt LambdaFunction.Arn
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+        - StatusCode: 400
+        - StatusCode: 500
+
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub '${ApiGateway}/*/*'
+
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn: ApiMethod
+    Properties:
+      RestApiId: !Ref ApiGateway
+      StageName: !Ref Environment
+
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${FunctionName}-artifacts-${AWS::AccountId}'
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: CleanupOldVersions
+            Status: Enabled
+            ExpirationInDays: 30
+            NoncurrentVersionExpirationInDays: 7
 
 Outputs:
+  ApiGatewayUrl:
+    Description: URL da API Gateway
+    Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/auth'
+    Export:
+      Name: !Sub '${FunctionName}-ApiUrl'
+
   LambdaFunctionArn:
     Description: ARN da função Lambda
     Value: !GetAtt LambdaFunction.Arn

@@ -11,8 +11,8 @@ on:
 env:
   AWS_REGION: 'us-east-1'
   LAMBDA_FUNCTION_NAME: 'cpf-cognito-lambda-handler'
-  S3_BUCKET: 'cpf-cognito-lambda-artifacts'
   STACK_NAME: 'cpf-cognito-lambda-stack'
+  ENVIRONMENT: 'production'
 
 jobs:
   deploy-lambda:
@@ -21,6 +21,13 @@ jobs:
     steps:
     - name: Checkout código
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Get Git commit hash
+      id: git-commit
+      run: |
+        echo "commit=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
     - name: Configurar AWS CLI
       uses: aws-actions/configure-aws-credentials@v2
@@ -29,56 +36,30 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    - name: Criar bucket S3 se não existir
+    - name: Criar .env dinamicamente
       run: |
-        aws s3 ls s3://$S3_BUCKET || aws s3 mb s3://$S3_BUCKET --region $AWS_REGION
-
-    - name: Criar .env dinamicamente para o package
-      run: |
-        echo "🔧 Criando .env para o package..."
+        echo "🔧 Criando .env..."
         cat > .env << EOF
         COGNITO_USER_POOL_ID=${{ secrets.COGNITO_USER_POOL_ID }}
         COGNITO_CLIENT_ID=${{ secrets.COGNITO_CLIENT_ID }}
-        NODE_ENV=production
-        AWS_REGION=us-east-1
+        NODE_ENV=${{ env.ENVIRONMENT }}
+        AWS_REGION=${{ env.AWS_REGION }}
         EOF
         echo "✅ .env criado com sucesso!"
 
     - name: Instalar dependências e empacotar Lambda
       run: |
         npm ci --production
-        zip -r function.zip src/ node_modules/ package.json .env
-        echo "📦 Package criado: function.zip"
-
-    - name: Fazer upload do código para S3
-      run: |
-        aws s3 cp function.zip "s3://$S3_BUCKET/functions/function-latest.zip"
-        echo "📤 Código enviado para S3: s3://$S3_BUCKET/functions/function-latest.zip"
-
-    - name: Verificar e limpar stack corrompido se necessário
-      run: |
-        echo "🔍 Verificando estado do CloudFormation stack..."
-        STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "NOT_EXIST")
-        
-        if [ "$STACK_STATUS" = "ROLLBACK_COMPLETE" ] || [ "$STACK_STATUS" = "ROLLBACK_FAILED" ]; then
-          echo "⚠️ Stack em estado corrompido ($STACK_STATUS). Deletando..."
-          aws cloudformation delete-stack --stack-name $STACK_NAME --region $AWS_REGION
-          echo "⏳ Aguardando deleção..."
-          sleep 30
-          echo "✅ Stack corrompido removido"
-        elif [ "$STACK_STATUS" = "NOT_EXIST" ]; then
-          echo "✅ Stack não existe, será criado novo"
-        else
-          echo "✅ Stack em estado saudável: $STACK_STATUS"
-        fi
+        zip -r function-${{ steps.git-commit.outputs.commit }}.zip src/ node_modules/ package.json .env
+        echo "📦 Package criado: function-${{ steps.git-commit.outputs.commit }}.zip"
 
     - name: Deploy CloudFormation Stack
       run: |
         echo "🚀 Iniciando deploy do CloudFormation..."
         echo "📋 Parâmetros:"
         echo "   Function: $LAMBDA_FUNCTION_NAME"
-        echo "   User Pool: ${{ secrets.COGNITO_USER_POOL_ID }}"
-        echo "   Client ID: ${{ secrets.COGNITO_CLIENT_ID }}"
+        echo "   Commit: ${{ steps.git-commit.outputs.commit }}"
+        echo "   Environment: $ENVIRONMENT"
         
         aws cloudformation deploy \
           --template-file .github/workflows/templates/lambda-template.yml \
@@ -87,7 +68,10 @@ jobs:
             FunctionName=$LAMBDA_FUNCTION_NAME \
             CognitoUserPoolId=${{ secrets.COGNITO_USER_POOL_ID }} \
             CognitoClientId=${{ secrets.COGNITO_CLIENT_ID }} \
-          --capabilities CAPABILITY_NAMED_IAM
+            Environment=$ENVIRONMENT \
+            GitCommit=${{ steps.git-commit.outputs.commit }} \
+          --capabilities CAPABILITY_NAMED_IAM \
+          --no-fail-on-empty-changeset
 
     - name: Verificar deploy
       run: |
@@ -95,3 +79,8 @@ jobs:
         echo "✅ Lambda: $LAMBDA_FUNCTION_NAME"
         echo "🔧 Stack: $STACK_NAME"
         echo "🌐 Região: $AWS_REGION"
+        echo "🔗 API URL:"
+        aws cloudformation describe-stacks \
+          --stack-name $STACK_NAME \
+          --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayUrl`].OutputValue' \
+          --output text
