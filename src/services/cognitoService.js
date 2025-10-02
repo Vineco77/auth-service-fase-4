@@ -163,7 +163,7 @@ class CognitoService {
             console.log('📋 Uusuário existe no Cognito?', exists);
 
             if (exists) {
-                console.log('🔐 Tentando autenticar usuário existente...');
+                console.log('🔐 Tentando autenticar usuário existente....');
                 const authResult = await this.authenticateUser(cpf);
                 console.log('✅ Resultado autenticaçã::', authResult.success, authResult.message);
 

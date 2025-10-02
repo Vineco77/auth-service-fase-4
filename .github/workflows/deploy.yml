@@ -53,6 +53,18 @@ jobs:
         zip -r function-${{ steps.git-commit.outputs.commit }}.zip src/ node_modules/ package.json .env
         echo "📦 Package criado: function-${{ steps.git-commit.outputs.commit }}.zip"
 
+    - name: Fazer upload do ZIP para S3
+      run: |
+        echo "📤 Fazendo upload do package para S3..."
+        # Primeiro verifica/cria o bucket
+        aws s3 ls "s3://$LAMBDA_FUNCTION_NAME-artifacts-$(aws sts get-caller-identity --query Account --output text)" || \
+        aws s3 mb "s3://$LAMBDA_FUNCTION_NAME-artifacts-$(aws sts get-caller-identity --query Account --output text)" --region $AWS_REGION
+        
+        # Faz upload do ZIP
+        aws s3 cp function-${{ steps.git-commit.outputs.commit }}.zip \
+          "s3://$LAMBDA_FUNCTION_NAME-artifacts-$(aws sts get-caller-identity --query Account --output text)/functions/$ENVIRONMENT/function-${{ steps.git-commit.outputs.commit }}.zip"
+        echo "✅ Package enviado para S3"
+
     - name: Deploy CloudFormation Stack
       run: |
         echo "🚀 Iniciando deploy do CloudFormation..."

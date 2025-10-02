@@ -17,6 +17,10 @@ Parameters:
     Description: Ambiente de deploy
     Default: 'production'
     AllowedValues: ['development', 'staging', 'production']
+  GitCommit:
+    Type: String
+    Description: Hash do commit para versionamento
+    Default: 'latest'
 
 Resources:
   LambdaExecutionRole:
@@ -44,8 +48,22 @@ Resources:
                   - !Sub 'arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${CognitoUserPoolId}'
                   - !Sub 'arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${CognitoUserPoolId}/*'
 
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${FunctionName}-artifacts-${AWS::AccountId}'
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: CleanupOldVersions
+            Status: Enabled
+            ExpirationInDays: 30
+            NoncurrentVersionExpirationInDays: 7
+
   LambdaFunction:
     Type: AWS::Lambda::Function
+    DependsOn: ArtifactsBucket
     Properties:
       FunctionName: !Ref FunctionName
       Runtime: nodejs18.x
@@ -113,19 +131,6 @@ Resources:
     Properties:
       RestApiId: !Ref ApiGateway
       StageName: !Ref Environment
-
-  ArtifactsBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub '${FunctionName}-artifacts-${AWS::AccountId}'
-      VersioningConfiguration:
-        Status: Enabled
-      LifecycleConfiguration:
-        Rules:
-          - Id: CleanupOldVersions
-            Status: Enabled
-            ExpirationInDays: 30
-            NoncurrentVersionExpirationInDays: 7
 
 Outputs:
   ApiGatewayUrl:
