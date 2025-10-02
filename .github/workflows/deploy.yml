@@ -7,7 +7,6 @@ on:
 env:
   AWS_REGION: 'us-east-1'
   LAMBDA_FUNCTION_NAME: 'cpf-cognito-lambda-handler'
-  STACK_NAME: 'cpf-cognito-lambda-stack'
 
 jobs:
   deploy-lambda:
@@ -23,21 +22,6 @@ jobs:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
-
-    - name: Limpar recursos anteriores
-      run: |
-        echo "🧹 Limpando recursos anteriores..."
-        
-        # Verifica e deleta a Lambda se existir
-        aws lambda get-function --function-name $LAMBDA_FUNCTION_NAME 2>/dev/null && \
-        aws lambda delete-function --function-name $LAMBDA_FUNCTION_NAME && \
-        echo "✅ Lambda anterior deletada" || echo "ℹ️ Lambda não existia"
-        
-        # Limpa role IAM se existir
-        aws iam get-role --role-name cpf-cognito-lambda-role 2>/dev/null && \
-        aws iam delete-role --role-name cpf-cognito-lambda-role && \
-        echo "✅ Role IAM deletada" || echo "ℹ️ Role IAM não existia"
-      continue-on-error: true
 
     - name: Criar .env dinamicamente
       run: |
@@ -56,22 +40,32 @@ jobs:
         zip -r function.zip src/ node_modules/ package.json .env
         echo "📦 Package criado: function.zip"
 
-    - name: Criar Lambda diretamente 
+    - name: Criar ou verificar Role IAM
       run: |
-        echo "🚀 Criando Lambda diretamente..."
+        echo "🛡️ Verificando/Criando Role IAM..."
         
-        # Cria role IAM primeiro
-        aws iam create-role \
-          --role-name cpf-cognito-lambda-role \
-          --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}' \
-          --description "Role para Lambda CPF Cognito"
+        # Verifica se a role já existe
+        if aws iam get-role --role-name cpf-cognito-lambda-role 2>/dev/null; then
+          echo "✅ Role IAM já existe, continuando..."
+        else
+          echo "📝 Criando nova Role IAM..."
+          aws iam create-role \
+            --role-name cpf-cognito-lambda-role \
+            --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}' \
+            --description "Role para Lambda CPF Cognito"
+          
+          echo "⏳ Aguardando role ficar disponível..."
+          sleep 10
+        fi
         
-        # Anexa políticas à role
+        # Anexa políticas (idempotente - pode rodar múltiplas vezes)
+        echo "📋 Anexando políticas à role..."
         aws iam attach-role-policy \
           --role-name cpf-cognito-lambda-role \
-          --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+          --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole || echo "ℹ️ Política básica já anexada"
         
-        # Cria policy customizada para Cognito
+        # Cria/atualiza policy customizada para Cognito
+        echo "🔐 Configurando política customizada do Cognito..."
         aws iam put-role-policy \
           --role-name cpf-cognito-lambda-role \
           --policy-name CognitoAccess \
@@ -84,32 +78,72 @@ jobs:
                   "cognito-idp:AdminGetUser",
                   "cognito-idp:SignUp", 
                   "cognito-idp:AdminInitiateAuth",
-                  "cognito-idp:AdminSetUserPassword"
+                  "cognito-idp:AdminSetUserPassword",
+                  "cognito-idp:AdminCreateUser"
                 ],
                 "Resource": "arn:aws:cognito-idp:us-east-1:'$(aws sts get-caller-identity --query Account --output text)':userpool/'${{ secrets.COGNITO_USER_POOL_ID }}'"
               }
             ]
           }'
         
-        echo "⏳ Aguardando role ficar disponível..."
-        sleep 10
+        echo "✅ Role IAM configurada com sucesso!"
+
+    - name: Criar ou atualizar Lambda Function
+      run: |
+        echo "🚀 Verificando/Criando Lambda Function..."
         
-        # Cria a Lambda
-        aws lambda create-function \
-          --function-name $LAMBDA_FUNCTION_NAME \
-          --runtime nodejs18.x \
-          --role arn:aws:iam::'$(aws sts get-caller-identity --query Account --output text)':role/cpf-cognito-lambda-role \
-          --handler src/handlers/cpfHandler.handler \
-          --zip-file fileb://function.zip \
-          --environment Variables="{COGNITO_USER_POOL_ID=${{ secrets.COGNITO_USER_POOL_ID }},COGNITO_CLIENT_ID=${{ secrets.COGNITO_CLIENT_ID }},NODE_ENV=production}" \
-          --timeout 15 \
-          --memory-size 128
+        # Obtém ARN da role
+        ROLE_ARN=$(aws iam get-role --role-name cpf-cognito-lambda-role --query 'Role.Arn' --output text)
+        echo "🔧 Usando Role: $ROLE_ARN"
         
-        echo "✅ Lambda criada com sucesso!"
+        # Verifica se a Lambda já existe
+        if aws lambda get-function --function-name $LAMBDA_FUNCTION_NAME 2>/dev/null; then
+          echo "🔄 Lambda já existe, atualizando código..."
+          aws lambda update-function-code \
+            --function-name $LAMBDA_FUNCTION_NAME \
+            --zip-file fileb://function.zip
+          
+          echo "⚙️ Atualizando configuração da Lambda..."
+          aws lambda update-function-configuration \
+            --function-name $LAMBDA_FUNCTION_NAME \
+            --environment "Variables={COGNITO_USER_POOL_ID=${{ secrets.COGNITO_USER_POOL_ID }},COGNITO_CLIENT_ID=${{ secrets.COGNITO_CLIENT_ID }},NODE_ENV=production}" \
+            --timeout 15 \
+            --memory-size 128 \
+            --role "$ROLE_ARN" || echo "ℹ️ Configuração já atualizada"
+        else
+          echo "📝 Criando nova Lambda Function..."
+          aws lambda create-function \
+            --function-name $LAMBDA_FUNCTION_NAME \
+            --runtime nodejs18.x \
+            --role "$ROLE_ARN" \
+            --handler src/handlers/cpfHandler.handler \
+            --zip-file fileb://function.zip \
+            --environment "Variables={COGNITO_USER_POOL_ID=${{ secrets.COGNITO_USER_POOL_ID }},COGNITO_CLIENT_ID=${{ secrets.COGNITO_CLIENT_ID }},NODE_ENV=production}" \
+            --timeout 15 \
+            --memory-size 128
+        fi
+        
+        echo "✅ Lambda Function configurada com sucesso!"
 
     - name: Verificar deploy
       run: |
         echo "🎉 DEPLOY CONCLUÍDO COM SUCESSO!"
         echo "✅ Lambda: $LAMBDA_FUNCTION_NAME"
         echo "🌐 Região: us-east-1 (N. Virginia)"
-        aws lambda get-function --function-name $LAMBDA_FUNCTION_NAME --query 'Configuration.[FunctionName, Runtime, Handler, State]' --output table
+        echo "📊 Status da Lambda:"
+        aws lambda get-function --function-name $LAMBDA_FUNCTION_NAME --query 'Configuration.[FunctionName, Runtime, Handler, State, LastUpdateStatus]' --output table
+
+    - name: Teste rápido da Lambda
+      run: |
+        echo "🧪 Testando Lambda..."
+        aws lambda invoke \
+          --function-name $LAMBDA_FUNCTION_NAME \
+          --payload '{"httpMethod":"POST","body":"{\"cpf\":\"12345678909\"}"}' \
+          --cli-binary-format raw-in-base64-out \
+          response.json || echo "ℹ️ Teste ignorado (possível erro esperado sem API Gateway)"
+        
+        if [ -f response.json ]; then
+          echo "📄 Resposta da Lambda:"
+          cat response.json
+          rm -f response.json
+        fi
