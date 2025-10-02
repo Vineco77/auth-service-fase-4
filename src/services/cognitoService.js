@@ -160,7 +160,7 @@ class CognitoService {
         try {
             console.log('🔍 Iniciando getCognitoJWT para CPF:', cpf);
             const exists = await this.userExists(cpf)
-            console.log('📋 Usuário existe no Cognito?', exists);
+            console.log('📋 Uusuário existe no Cognito?', exists);
 
             if (exists) {
                 console.log('🔐 Tentando autenticar usuário existente...');

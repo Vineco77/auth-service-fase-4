@@ -52,7 +52,6 @@ jobs:
 
     - name: Fazer upload do código para S3
       run: |
-        TIMESTAMP=$(date +%Y%m%d%H%M%S)
         S3_KEY="functions/function-$STACK_NAME-$AWS_REGION-latest.zip"
         aws s3 cp function.zip "s3://$S3_BUCKET/$S3_KEY"
         echo "📤 Código enviado para S3: s3://$S3_BUCKET/$S3_KEY"
@@ -79,7 +78,6 @@ jobs:
         echo "🚀 Iniciando deploy do CloudFormation..."
         echo "📋 Parâmetros:"
         echo "   Function: $LAMBDA_FUNCTION_NAME"
-        echo "   S3 URI: ${{ env.CODE_S3_URI }}"
         echo "   User Pool: ${{ secrets.COGNITO_USER_POOL_ID }}"
         echo "   Client ID: ${{ secrets.COGNITO_CLIENT_ID }}"
         
@@ -88,7 +86,6 @@ jobs:
           --stack-name $STACK_NAME \
           --parameter-overrides \
             FunctionName=$LAMBDA_FUNCTION_NAME \
-            CodeS3Uri=${{ env.CODE_S3_URI }} \
             CognitoUserPoolId=${{ secrets.COGNITO_USER_POOL_ID }} \
             CognitoClientId=${{ secrets.COGNITO_CLIENT_ID }} \
           --capabilities CAPABILITY_NAMED_IAM
@@ -97,6 +94,5 @@ jobs:
       run: |
         echo "🎉 DEPLOY CONCLUÍDO COM SUCESSO!"
         echo "✅ Lambda: $LAMBDA_FUNCTION_NAME"
-        echo "📦 Código: ${{ env.CODE_S3_URI }}"
         echo "🔧 Stack: $STACK_NAME"
         echo "🌐 Região: $AWS_REGION"
