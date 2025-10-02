@@ -29,7 +29,7 @@ exports.handler = async (event) => {
                 return {
                     statusCode: 400,
                     body: JSON.stringify({
-                        error: 'Invalid JSON body',
+                        error: 'Invalid JSON body.',
                         message: parseError.message
                     })
                 };
