@@ -87,7 +87,7 @@ A validação do CPF segue as regras padrão:
       -d '{"cpf": "123.456.789-09"}' # Use um CPF válido
     ```
 
-### Estrutura do Projeto:
+### Estrutura do Projeto
 ```
 .
 ├── create-infrastructure.sh  # Script para criar a infraestrutura na AWS
