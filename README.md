@@ -1,4 +1,4 @@
-# Fast Food - Fase 3 - Autenticação de Cliente com CPF
+# Fast Food - Fase 4 - Autenticação de Cliente com CPF
 
 Este projeto implementa um sistema de autenticação de clientes para uma aplicação de fast food, utilizando uma arquitetura serverless na AWS. O cliente é identificado unicamente pelo seu CPF, sem a necessidade de senha.
 
