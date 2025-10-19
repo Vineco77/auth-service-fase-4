@@ -103,5 +103,5 @@ A validação do CPF segue as regras padrão:
 │   └── utils/
 │       └── cpfValidator.js   # Funções de validação de CPF
 └── test/                     # Testes da aplicação
-    └── test.js.
+    └── test.js
 ```
