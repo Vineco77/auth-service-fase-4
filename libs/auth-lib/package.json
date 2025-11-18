@@ -1,0 +1,19 @@
+{
+  "name": "@fast-food/auth-lib",
+  "version": "1.0.0",
+  "description": "Biblioteca de validação JWT para microservices",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "jsonwebtoken": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.0",
+    "@types/node": "^24.10.1",
+    "typescript": "^5.0.0"
+  }
+}
