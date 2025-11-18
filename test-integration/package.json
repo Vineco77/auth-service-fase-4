@@ -1,0 +1,11 @@
+{
+  "name": "test-order-service",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "nest build",
+    "start": "nest start"
+  },
+  "dependencies": {
+    "@fast-food/auth-lib": "file:../libs/auth-lib"
+  }
+}

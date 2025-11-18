@@ -11,3 +11,7 @@ note.txt
 # Arquivos temporários
 *.zip
 cognito-policy.json
+test-report.xml
+coverage/*
+dist/*
+.vscode/*

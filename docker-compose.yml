@@ -1,0 +1,50 @@
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15
+    container_name: auth_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - auth_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    container_name: auth_app
+    ports:
+      - "1337:1337"
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - auth_network
+    # 🚀 Comando que aguarda o banco e executa migrações
+    command: >
+      sh -c "
+        echo '🕒 Aguardando banco de dados...' &&
+        sleep 10 &&
+        echo '🚀 Executando migrações...' &&
+        npx prisma migrate deploy &&
+        echo '✅ Migrações concluídas!' &&
+        node dist/main
+      "
+
+volumes:
+  postgres_data:
+
+networks:
+  auth_network:
+    driver: bridge
