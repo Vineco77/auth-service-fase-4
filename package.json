@@ -1,11 +1,14 @@
 {
   "name": "auth-service",
   "version": "1.0.0", 
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/main.js",
+  "types": "dist/main.d.ts",
   "description": "Microserviço de Autenticação",
   "scripts": {
     "build": "nest build",
+    "build:lib": "cd libs/auth-lib && npm run build",
+    "build:all": "npm run build:lib && nest build",
+    "publish:lib": "cd libs/auth-lib && npm publish --access public",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
@@ -18,10 +21,11 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "docker:up": "docker-compose up -d",
-    "docker:down": "docker-compose down",
-    "build:lib": "cd libs/auth-lib && npm run build",
-    "build:all": "npm run build:lib && nest build"
+    "docker:down": "docker-compose down"
   },
+    "workspaces": [
+    "libs/auth-lib"
+  ],
   "dependencies": {
     "@nestjs/common": "^10.0.0",
     "@nestjs/config": "^3.0.0",

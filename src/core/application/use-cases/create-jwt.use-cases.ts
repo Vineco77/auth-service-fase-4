@@ -1,8 +1,8 @@
 // src/core/application/use-cases/create-jwt.use-cases.ts
 import { Injectable, Inject } from '@nestjs/common';
-import { JwtServiceInterface } from '../../../../libs/auth-lib/src/interfaces/jwt-service.interface';
+import { JwtServiceInterface } from '../../domain/interfaces/jwt-service.interface';
+import { JwtPayload } from '../../domain/interfaces/jwt-payload.interface';
 import { UserRepositoryInterface } from '../ports/output/repositories/user.repository.interface';
-import { JwtPayload } from '../../../../libs/auth-lib/src/interfaces/jwt-payload.interface';
 import { v4 as uuidv4 } from 'uuid';
 import { AppError } from '../../domain/errors/app.error';
 

@@ -1,6 +1,6 @@
 import { Injectable, Inject } from '@nestjs/common';
-import { JwtServiceInterface } from '../../../../libs/auth-lib/src/interfaces/jwt-service.interface';
-import { JwtPayload } from '../../../../libs/auth-lib/src/interfaces/jwt-payload.interface';
+import { JwtServiceInterface } from '../../domain/interfaces/jwt-service.interface';
+import { JwtPayload } from '../../domain/interfaces/jwt-payload.interface';
 
 @Injectable()
 export class ValidateJwtUseCase {
