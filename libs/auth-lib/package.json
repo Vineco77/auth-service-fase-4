@@ -1,14 +1,15 @@
 {
-  "name": "@fast-food/auth-lib",
+  "name": "@vineco77/auth-lib",
   "version": "1.0.0",
   "description": "Biblioteca de validação JWT para microservices",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
-    "dist/**/*"
+    "dist/**/*",
+    "README.md"
   ],
   "scripts": {
-    "build": "node build.js",
+    "build": "tsc",
     "prepack": "npm run build",
     "test": "node test/test-lib.js"
   },
@@ -20,10 +21,11 @@
     "@types/jsonwebtoken": "^9.0.0"
   },
   "publishConfig": {
-    "access": "public"
+    "registry": "https://npm.pkg.github.com"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Vineco77/auth-service-fase-4.git"
+    "url": "https://github.com/Vineco77/auth-service-fase-4.git",
+    "directory": "libs/auth-lib"
   }
 }
