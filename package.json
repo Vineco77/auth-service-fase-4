@@ -1,8 +1,8 @@
 {
   "name": "auth-service",
   "version": "1.0.0", 
-  "main": "dist/main.js",
-  "types": "dist/main.d.ts",
+  "main": "dist/src/main.js",
+  "types": "dist/src/main.d.ts",
   "description": "Microserviço de Autenticação",
   "scripts": {
     "build": "nest build",
@@ -12,7 +12,7 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
-    "start:prod": "node dist/main",
+    "start:prod": "node dist/src/main",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
@@ -65,9 +65,9 @@
   },
 "exports": {
   ".": {
-    "import": "./dist/main.js",
-    "require": "./dist/main.js",
-    "types": "./dist/main.d.ts"
+    "import": "./dist/src/main.js",
+    "require": "./dist/src/main.js",
+    "types": "./dist/src/main.d.ts"
   },
   "./lib": {
     "import": "./dist/lib-index.js",

@@ -7,8 +7,7 @@ export class CreateJwtDto {
     example: '12345678901',
   })
   @IsString()
-  @Length(11, 11, { message: 'CPF must have exactly 11 characters' })
-  @Matches(/^\d+$/, { message: 'CPF must contain only numbers' })
+  @IsOptional()
   cpf: string;
 
   @ApiProperty({

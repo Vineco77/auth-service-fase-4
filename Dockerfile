@@ -22,4 +22,4 @@ RUN npm run build
 EXPOSE 1337
 
 # Comando padrão (sem migrações)
-CMD ["node", "dist/main"]
+CMD ["node", "dist/src/main"]

@@ -39,7 +39,7 @@ services:
         echo '🚀 Executando migrações...' &&
         npx prisma migrate deploy &&
         echo '✅ Migrações concluídas!' &&
-        node dist/main
+        node dist/src/main
       "
 
 volumes:
