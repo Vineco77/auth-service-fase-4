@@ -7,7 +7,7 @@ import { AppError } from '../../../core/domain/errors/app.error';
 @Injectable()
 export class JwtService implements JwtServiceInterface {
   private readonly secret: string;
-  private readonly expiresIn: jwt.SignOptions['expiresIn'] = '15m'; // 15 minutos conforme regra
+  private readonly expiresIn: jwt.SignOptions['expiresIn'] = '30d'; // 15 minutos conforme regra
 
   constructor() {
     this.secret = process.env.JWT_SECRET;

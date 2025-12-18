@@ -8,7 +8,7 @@ export class CreateJwtDto {
   })
   @IsString()
   @IsOptional()
-  cpf: string;
+  cpf?: string;
 
   @ApiProperty({
     description: 'Nome do usuário (opcional)',
