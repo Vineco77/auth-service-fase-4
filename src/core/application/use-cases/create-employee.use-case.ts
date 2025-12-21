@@ -28,7 +28,7 @@ export class CreateEmployeeUseCase {
       const existingEmployee = await this.userRepository.findByCpf(cpf);
       if (existingEmployee) {
         throw AppError.conflict({
-          message: 'Employee with this CPF already exists',
+          message: 'Employee with this CPF already exists.',
         });
       }
 
