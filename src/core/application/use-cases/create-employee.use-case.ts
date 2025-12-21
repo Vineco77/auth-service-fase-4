@@ -20,7 +20,7 @@ export class CreateEmployeeUseCase {
   async execute(cpf: string, name: string, secretKey: string): Promise<UserEntity> {
     if (secretKey !== this.adminSecret) {
       throw AppError.forbidden({
-        message: 'Invalid admin secret key',
+        message: 'Invalid admin secret key.',
       });
     }
 
