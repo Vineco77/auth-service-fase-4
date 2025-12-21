@@ -37,7 +37,7 @@ export class CreateEmployeeUseCase {
     } catch (error) {
       if (error instanceof AppError) throw error;
       throw AppError.internal({
-        message: 'Failed to create employee',
+        message: 'Failed to create employee.',
         details: error instanceof Error ? error.message : String(error),
       });
     }
