@@ -28,7 +28,7 @@ export class CreateEmployeeUseCase {
       const existingEmployee = await this.userRepository.findByCpf(cpf);
       if (existingEmployee) {
         throw AppError.conflict({
-          message: 'Employee with this CPF already exists',
+          message: 'Employee with this CPF already exists.',
         });
       }
 
@@ -37,7 +37,7 @@ export class CreateEmployeeUseCase {
     } catch (error) {
       if (error instanceof AppError) throw error;
       throw AppError.internal({
-        message: 'Failed to create employee',
+        message: 'Failed to create employee.',
         details: error instanceof Error ? error.message : String(error),
       });
     }

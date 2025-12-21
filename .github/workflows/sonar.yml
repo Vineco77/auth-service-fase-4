@@ -21,8 +21,32 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
-      - name: Run tests with coverage
-        run: npm test -- --coverage --coverageReporters=lcov
+      - name: 🔬 Enforce 80% Test Coverage Threshold
+        id: coverage-check
+        run: |
+          echo "Running tests and checking coverage..."
+          
+          # 1. Gera o relatório de cobertura em formato JSON (para a verificação) e LCOV (para o Sonar)
+          npm test -- --coverage --coverageReporters=json-summary --coverageReporters=lcov
+          
+          # 2. Lê a cobertura total de linhas do JSON
+          COVERAGE_PERCENT=$(node -e "
+            const report = require('./coverage/coverage-summary.json');
+            console.log(report.total.lines.pct);
+          ")
+          
+          echo "📊 Total Line Coverage: $COVERAGE_PERCENT%"
+          
+          # 3. Define o limite e compara
+          MIN_COVERAGE=80
+          if (( $(echo "$COVERAGE_PERCENT < $MIN_COVERAGE" | bc -l) )); then
+            echo "❌❌❌ COBERTURA INSUFICIENTE ❌❌❌"
+            echo "A cobertura de testes ($COVERAGE_PERCENT%) está abaixo do mínimo exigido de $MIN_COVERAGE%."
+            echo "Adicione mais testes ou corrija os testes existentes."
+            exit 1 # Falha a pipeline
+          else
+            echo "✅ Cobertura de testes ($COVERAGE_PERCENT%) atende ao mínimo de $MIN_COVERAGE%."
+          fi
       
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@master
