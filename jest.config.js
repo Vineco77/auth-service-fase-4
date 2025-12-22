@@ -8,6 +8,11 @@ module.exports = {
   },
   collectCoverageFrom: [
     '**/*.(t|j)s',
+    '!**/*.dto.ts',
+    '!**/*.enum.ts',
+    '!**/value-objects/**',
+    '!**/*.interface.ts',
+    '!**/main.ts',
   ],
   coverageDirectory: '../coverage',
   testEnvironment: 'node',

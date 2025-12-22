@@ -21,33 +21,50 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
-      - name: 🔬 Enforce 80% Test Coverage Threshold
+      - name: 🔬 Enforce 80% Test Coverage per File
         id: coverage-check
         run: |
-          echo "Running tests and checking coverage..."
+          echo "Running tests and checking coverage per file..."
           
-          # 1. Gera o relatório de cobertura em formato JSON (para a verificação) e LCOV (para o Sonar)
+          # 1. Gera o relatório de cobertura em formato JSON
           npm test -- --coverage --coverageReporters=json-summary --coverageReporters=lcov
           
-          # 2. Lê a cobertura total de linhas do JSON
-          COVERAGE_PERCENT=$(node -e "
+          # 2. Analisa CADA ARQUIVO no relatório
+          FAILED_FILES=$(node -e "
             const report = require('./coverage/coverage-summary.json');
-            console.log(report.total.lines.pct);
+            const minCoverage = 80;
+            let failed = [];
+            
+            for (const [filePath, data] of Object.entries(report)) {
+              // Ignora o total e arquivos que não são do nosso src
+              if (filePath === 'total' || !filePath.includes('src/')) continue;
+              
+              // Ignora DTOs, Enums, Value Objects, Interfaces e Bootstrap
+              if (filePath.endsWith('.dto.ts') || 
+                  filePath.endsWith('.enum.ts') || 
+                  filePath.includes('/value-objects/') ||
+                  filePath.endsWith('.interface.ts') ||
+                  filePath.endsWith('/main.ts')) continue;
+              
+              const lineCoverage = data.lines.pct;
+              if (lineCoverage < minCoverage) {
+                failed.push(\`\${filePath}: \${lineCoverage}%\`);
+              }
+            }
+            
+            if (failed.length > 0) {
+              console.log('❌ Arquivos com cobertura insuficiente:');
+              failed.forEach(f => console.log(\`  \${f}\`));
+              process.exit(1); // Falha a pipeline
+            } else {
+              console.log('✅ Todos os arquivos atendem 80% de cobertura!');
+              process.exit(0);
+            }
           ")
           
-          echo "📊 Total Line Coverage: $COVERAGE_PERCENT%"
-          
-          # 3. Define o limite e compara
-          MIN_COVERAGE=80
-          if (( $(echo "$COVERAGE_PERCENT < $MIN_COVERAGE" | bc -l) )); then
-            echo "❌❌❌ COBERTURA INSUFICIENTE ❌❌❌"
-            echo "A cobertura de testes ($COVERAGE_PERCENT%) está abaixo do mínimo exigido de $MIN_COVERAGE%."
-            echo "Adicione mais testes ou corrija os testes existentes."
-            exit 1 # Falha a pipeline
-          else
-            echo "✅ Cobertura de testes ($COVERAGE_PERCENT%) atende ao mínimo de $MIN_COVERAGE%."
-          fi
-      
+          # 3. Se o Node sair com código 1, este comando não será executado
+          echo "✅ Verificação de cobertura por arquivo concluída com sucesso."
+
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@master
         env:
