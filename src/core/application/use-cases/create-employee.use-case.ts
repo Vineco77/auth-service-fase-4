@@ -13,7 +13,7 @@ export class CreateEmployeeUseCase {
   ) {
     this.adminSecret = process.env.ADMIN_SECRET_KEY;
     if (!this.adminSecret) {
-      throw new Error('ADMIN_SECRET_KEY is not defined.');
+      throw new Error('ADMIN_SECRET_KEY is not defined..');
     }
   }
 
